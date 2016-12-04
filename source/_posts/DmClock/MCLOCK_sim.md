@@ -6,11 +6,9 @@ tags: [mClock]
 toc: true
 ---
 
-# 代码结构
-
-## Sim
-
 Sim模块构建一个模拟器来模拟一组客户机向一组服务主机发送请求，同时服务主机根据指定的QoS算法调度请求的处理顺序的过程。Sim提供了两种调度算法，一种是FCFS的简单调度算法，另一种就是dmClock调度算法。
+
+<!--more-->
 
 ``` C++
 // TS代表服务，例如 SimulatedServer
@@ -37,7 +35,7 @@ public:
 
 打印每个服务处理的请求数目。
 
-### 客户端
+## 客户端 
 
 ``` C++
 class SimulatedClient {
@@ -83,7 +81,7 @@ CliInst类描述生成请求的指令（instruction），两种生成请求的�
 4. 如果所有的请求还没发送结束，则跳转到步骤1继续执行；
 4. 如果所有的请求已经发送结束，但还存在等待请求，则跳转到步骤2)继续执行；
 
-### 服务端
+## 服务端
 
 ``` C++
 // Q代表优先级队列的类型
@@ -128,7 +126,7 @@ Server属于自己的属性：IOPS(默认值 40)、线程数。IOPS代表Server�
 
 SimulatedServer内部维护了两个队列：内部队列inner_queue和优先级队列priority_queue。内部队列是FCFS队列，Server处理请求时直接从该队列读取请求。priority_queue队列用于定义QoS调度算法，客户的请求将先入priority_queue队列，然后由priority_queue队列根据自己的算法将请求放入内部队列。
 
-### 简单调度 ssched
+## 简单调度 ssched
 
 ``` shell
 ./ssched_sim
@@ -153,7 +151,7 @@ const std::chrono::seconds client_wait(10);  // 延迟启动的客户的延迟�
 
 SimpleServer的优先级队列是SimpleQueue类，SimpleQueue类调度请求的顺序是先进先出。具体实现参考该类的schedule_request()方法。
 
-### mClock调度 dmc
+## mClock调度 dmc
 
 ``` shell
 ./dmc_sim --conf dmc_sim_100th.conf
@@ -210,11 +208,3 @@ struct ClientInfo {
     const double weight_inv; //  权重的倒数
 };
 ```
-
-
-# VS快捷键
-
-F12 : 转到定义
-Ctrl + -: 让光标移动到它先前的位置
-Ctrl + +: 让光标移动到下一个位置
-Ctrl + Up/Down: 滚动窗口但不移动光标
