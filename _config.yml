@@ -70,7 +70,8 @@ theme: next
 deploy:
   type: git
   repo:
-  github: https://github.com/wuxiangwei/wuxiangwei.github.io.git,master 
+    github: https://github.com/wuxiangwei/wuxiangwei.github.io.git,master 
+    coding: https://git.coding.net/wuxiangwei/wuxiangwei.git,master
 
 avatar: https://avatars1.githubusercontent.com/u/13565263?v=3&u=dcc263197a386ed317bc8a0b271ee016ea9d2cd5&s=400
 
