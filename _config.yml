@@ -3,11 +3,11 @@
 ## Source: https://github.com/hexojs/hexo/
 
 # Site
-title: Hexo
+title: Shanno's Blog
 subtitle:
-description:
-author: John Doe
-language:
+description: 存储界的一名小学生
+author: shanno
+language: zh-Hans
 timezone:
 
 # URL
@@ -63,9 +63,27 @@ pagination_dir: page
 # Extensions
 ## Plugins: https://hexo.io/plugins/
 ## Themes: https://hexo.io/themes/
-theme: landscape
+theme: next
 
 # Deployment
 ## Docs: https://hexo.io/docs/deployment.html
 deploy:
-  type:
+  type: git
+  repo:
+  github: https://github.com/wuxiangwei/wuxiangwei.github.io.git,master 
+
+avatar: https://avatars1.githubusercontent.com/u/13565263?v=3&u=dcc263197a386ed317bc8a0b271ee016ea9d2cd5&s=400
+
+duoshuo_shortname: wuxiangwei
+duoshuo_hotartical: true
+
+baidu_analytics: 43e3e311f6a18c4a5c109bab614ae406
+
+
+search:
+ path: search.xml
+ field: post
+ format: html
+ limit: 10000
+
+
