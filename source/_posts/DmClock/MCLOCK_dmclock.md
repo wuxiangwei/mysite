@@ -1,13 +1,12 @@
 ﻿---
-title: "dmClock源码分析之DMC队列"
+title: "dmClock源码分析之DMC模块"
 date: 2016-11-17 15:01:26
 categories: [mClock]
 tags: [mClock]
 toc: true
 ---
 
-
-# Tag值计算 Tag Assignment
+# Tag计算
 
 Tag值的计算依赖于两类参数，一类是用户配置的上限(limit)、下限(reservation)以及权重(weight)，另一类是动态统计出来的delta和rho。根据dmClock算法的描述，delta和rho这两个参数由客户端来统计，并将其夹带到请求中发送给服务端。
 
@@ -16,17 +15,18 @@ Tag值的计算依赖于两类参数，一类是用户配置的上限(limit)、�
 ## 客户端
 
 从客户端发送请求到请求到达服务端的内部队列的函数调用过程，后文记为**过程A**：
-
-    SimulatedClient::run_req() --> SimulatedClient::submit_f() --> SimulatedServer::post() --> 
-    PushPriorityQueue::add_request() --> PushPriorityQueue::schedule_request() --> 
-    PushPriorityQueue::submit_request() --> PushPriorityQueue::submit_top_request() --> 
-    PriorityQueueBase::pop_process_request() --> PushPriorityQueue::handle_f() --> SimulatedServer::inner_post()
+```
+SimulatedClient::run_req() --> SimulatedClient::submit_f() --> SimulatedServer::post() --> 
+PushPriorityQueue::add_request() --> PushPriorityQueue::schedule_request() --> 
+PushPriorityQueue::submit_request() --> PushPriorityQueue::submit_top_request() --> 
+PriorityQueueBase::pop_process_request() --> PushPriorityQueue::handle_f() --> SimulatedServer::inner_post()
+```
 
 从服务端发送响应到客户端接收到响应的函数调用过程，后文记为**过程B**：
-
-    SimulatedServer::run() --> SimulatedServer::client_resp_f() --> 
-    SimulatedClient::receive_response() --> SimulatedClient::run_resp() --> ServiceTracker::track_resp()
-
+```
+SimulatedServer::run() --> SimulatedServer::client_resp_f() --> 
+SimulatedClient::receive_response() --> SimulatedClient::run_resp() --> ServiceTracker::track_resp()
+```
 
 根据dmClock算法，发送给给定服务端的请求中携带的delta的定义为：
 > 从最近一次发送给该服务端请求的时刻到当前时刻这段时间内，客户发送给其它服务端的请求的数目。
@@ -65,21 +65,24 @@ delta = 1 + delta_counter - it->second.delta_prev_req - it->second.my_delta
 
 从客户端发送请求到请求到达服务端的优先级队列的函数调用过程：
 
-    SimulatedClient::run_req() --> SimulatedClient::submit_f() --> SimulatedServer::post() --> 
-    PushPriorityQueue::add_request() --> PushPriorityQueue::do_add_request()
-
+```
+SimulatedClient::run_req() --> SimulatedClient::submit_f() --> SimulatedServer::post() --> 
+PushPriorityQueue::add_request() --> PushPriorityQueue::do_add_request()
+```
 在这过程中，请求被添加上了一个伪Tag。之所以假是因为Tag中除当前时间外其它的内容都为0。具体参看PushPriorityQueue::do_add_request函数。
 
 从请求开始调度到请求送到服务端的内部队列的函数调用过程：
-
-    PushPriorityQueue::schedule_request() --> PushPriorityQueue::submit_request() -->
-    PushPriorityQueue::submit_top_request() --> PriorityQueueBase::pop_process_request() --> 
-    PushPriorityQueue::handle_f() --> SimulatedServer::inner_post()
-
+```
+PushPriorityQueue::schedule_request() --> PushPriorityQueue::submit_request() -->
+PushPriorityQueue::submit_top_request() --> PriorityQueueBase::pop_process_request() --> 
+PushPriorityQueue::handle_f() --> SimulatedServer::inner_post()
+```
 PriorityQueueBase::pop_process_request开始计算请求的tag值，具体计算过程在RequestTag::tag_calc函数完成，计算过程和算法描述基本一致。注意，对第一个请求，RequestTag计算Tag时，依赖的前个请求为默认的prev_tag(0.0, 0.0, 0.0, TimeZero)，这样第一个请求的各个Tag值将为请求到达的时间。
 
 
-## 数据结构
+### 数据结构
+
+#### DMC客户
 
 ``` C++
 // C: 客户ID
@@ -102,13 +105,7 @@ class ClientRec {
 服务端中每个客户即ClientRec类的一个实例，客户的请求保存到ClientRec::requests队列，该队列是FCFS队列。也就说，同个客户端的请求的相对顺序保持不变。dmClock改变的是不同客户端间的处理顺序。
 
 
-# 请求排序 Schedule Request
-
-请求调度过程中，不论是constraint-based阶段还是weight-based阶段，scheduler选择待处理请求的方法都是在给定的Tag类型中选择值最小的请求。
-
-## 堆
-
-### 数据结构
+#### 请求堆
 
 ``` C++
 // I: 元素类型
@@ -140,11 +137,8 @@ protected:
     void sift(index_t i);
 };
 ```
-
 参考[浅谈算法和数据结构: 五 优先级队列与堆排序](http://www.cnblogs.com/yangecnu/archive/2014/03/02/3577568.html) 获取更多关于堆的内容。
 
-
-### 两个基础操作
 
 ``` C++
 void IndIntruHeap::sift_up(index_t i) {
@@ -210,7 +204,19 @@ typename std::enable_if<(K>2)&&EnableBool,void>::type IndIntruHeap::sift_down(in
 } // sift_down 
 ```
 
-## 如何比较优先级
+### 优先级比较
+
+``` C++
+// 请求的Tag，包含预留(reservation)、上限(limit)和权重(proportion)。
+class RequestTag {
+    double reservation;  // 预留
+    double proportion;  // 权重
+    double limit;  // 上限
+    bool ready;  // 请求是否允许在Weight-based阶段被处理，当Limit低于当前时间（请求调度）
+    Time arrival;  // 接收到请求的时间
+};
+```
+请求调度的Weight-based阶段，先从Limit堆中筛选出能够在这个阶段被处理的请求，设置请求的ready字段为True。筛选的条件是请求的L Tag低于当前时间。筛选结束后再从Ready堆中选择请求。详情参考 PriorityQueueBase::do_next_request函数。
 
 ``` C++
 // tag_field代表RequestTag类的一个成员变量
@@ -224,23 +230,15 @@ struct ClientCompare {
     }
 };
 ```
+比较客户n1和客户n2的Next请求的优先级。根据mClock算法，Tag值越小优先级应该越高。该函数的本意是，判断“n1的Next请求的优先级高于n2？”。下文使用tag1和tag2分别表示n1和n2的Next请求的Tag值。
 
-比较客户n1和客户n2的优先级，根据算法，tag值越小优先级应该越高。该函数的本意是，判断“n1的优先级高于n2？”。下文中使用tag1和tag2分布表示n1和n2的next请求的tag值。
+对**reservation堆**，依据“谁小谁优先级高”的原则，若tag1小于tag2，则返回True；
+对**ready堆**，如果t1、t2两者的ready状态相同（都为true或者都为false），那么遵循“谁小谁优先级高”的原则；如果t1、t2的两者的ready状态不同（一个为true一个为false），那么依据“**谁ready谁优先级高**”的原则；
+对**limit堆**，如果t1、t2两者的ready状态相同，那么遵循“谁小谁优先级高”的原则。如果两者的ready状态不同，按照“**谁没ready谁优先级高**”的原则，对已经Ready的请求将在请求调度中直接处理掉。
 
-对**reservation堆**，依据“谁小谁优先级高”的原则，若tag1小于tag2，则返回true。对**ready堆**，如果t1、t2两者的ready状态相同（都为true或者都为false），那么遵循“谁小谁优先级高”的原则；如果t1、t2的两者的ready状态不同（一个为true一个为false），那么依据“**谁ready谁优先级高**”的原则。对limit堆，如果t1、t2两者的ready状态相同，那么遵循“谁小谁优先级高”的原则。如果两者的ready状态不同，按照“**谁没ready谁优先级高**”的原则。
+### Tag校准
 
-
-### Tag校准 Tag Adjustment
-
-DmClock算法对Tag校准的描述是：
-> 当新加入空闲的客户时，将所有未处理掉的请求的Proportion Tag都偏移一个位置。偏移量为当前时间减去值最小的Tag。
-
-算法实现恰与之相反，不是偏移每个现有请求的Tag，而是偏移新加入客户的请求的Tag，偏移量与算法描述相同，偏移的方向相反。因此，效果相同。具体做法分成两步：
-
-1. 接收请求时，检查客户是否idle，如果idle则计算偏移量。参考PriorityQueueBase::do_add_request函数的*if (client.idle)* 分支。
-2. 比较Proportion Tag时，为给定的Tag动态增加偏移量。参考ClientCompare的operator()函数。
-
-另外，Tag校准只针对Proportion Tag。如下面的代码，实例化ClientCompare时，模板最后一个参数为true代表要加上偏移量。
+根据mClock算法，当有**新VM**启动时所有**老VM**请求的P Tag都要向左偏移一个位置（即P Tag减去偏移量），以避免新VM请求偏低影响公平性。偏移量为所有老VM的剩余请求中最小的P Tag减去当前时间（新VM第一个请求的到达时间）。反过来思考，将所有老VM的剩余请求在P Tag时间轴上向左偏移和将新VM的请求向右偏移的结果是相同的，一样能够消除不公平性。但这在代码实现上就简单了，只要在新VM中记录偏移量，并在Tag比较时加上偏移量即可，不必对所有老VM的剩余请求大动干戈。
 
 ``` C++
 template<typename C, typename R, uint B>
@@ -256,6 +254,12 @@ class PriorityQueueBase {
                     B> ready_heap;
 };
 ```
+算法实现中分两步完成Tag校准：
+
+1. 接收请求时，检查Client是否空闲，若空闲则计算偏移量，并将偏移量保存到ClientRec::prop_delta变量。参考PriorityQueueBase::do_add_request函数的*if (client.idle)*分支；
+2. 比较P Tag时， 为请求的P Tag加上Client的prop_delta后再比较。参考ClientCompare的operator()函数。
+
+另外，注意只有P Tag需要校准。ClientCompare模板的最后一个参数代表是否使用prop_delta，只有ready_heap变量为True。
 
 ### 判断客户为空闲
 
@@ -265,32 +269,14 @@ class PriorityQueueBase {
 
 对定时检查策略，除了将客户标记为idle状态外还会清理长久没有发送请求的客户。默认情况下，定时检查的时间间隔为6分钟，超过10分钟没新请求的客户将被标记为idle状态，超过15分钟没有新请求的客户将被从服务端清理。
 
-
-### 数据结构
-
-``` C++
-// mClock算法为每个请求准备3个tag，此类即是请求的tags
-class RequestTag {
-    double reservation;
-    double proportion;
-    double limit;
-    bool ready;  // 请求是否允许依据weight来处理
-    Time arrival;  // 接收到请求的时间
-};
-```
-成员变量ready是个标记，用于标记给定的请求已不受limit的限制，允许在proportion调度中被处理。修改ready标记在请求调度阶段，scheduler首先在limit堆中检查给定的请求是否小于now，如果小于now代表该请求可以被scheduler处理，将其标记为ready状态；然后，在proportion堆中读取节点时必须要求给定的请求是ready状态的。
-
-
-## 请求调度过程
+### 请求调度
 
 请求调度，从堆结构中获取待处理请求的函数调用过程：
 
-    PushPriorityQueue::schedule_request() --> PushPriorityQueue::next_request -->
-    PriorityQueueBase::do_next_request()
+```
+PushPriorityQueue::schedule_request() --> PushPriorityQueue::next_request --> PriorityQueueBase::do_next_request()
+```
+DmClock算法的请求调度流程在PriorityQueueBase::do_next_request函数中实现。
 
-dmClock算法的请求调度流程在PriorityQueueBase::do_next_request函数中实现。
-
-### 递减剩余请求的R tag
-
-根据dmClock算法，在weight-based阶段每处理一个请求时，为避免影响R tag的排序，需要将该客户的剩余请求的R tag值递减 1/ri。这个过程在函数PushPriorityQueue::submit_request()以及PriorityQueueBase::reduce_reservation_tags函数中实现。
-
+**递减剩余请求的R Tag**
+根据DmClock算法，在Weight-based阶段每处理一个请求时，为避免影响R tag的排序，需要将该客户的剩余请求的R tag值递减 1/ri。这个过程在函数PushPriorityQueue::submit_request()以及PriorityQueueBase::reduce_reservation_tags函数中实现。
