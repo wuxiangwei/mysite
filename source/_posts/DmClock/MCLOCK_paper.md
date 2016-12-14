@@ -58,7 +58,7 @@ IO资源调度一般有3类相关的算法。第1类算法按比例分配IO资�
 
 总而言之，分配策略会根据总吞吐量和活动VM而动态变化。将VM划分为三类：预留(R)、上限(L)、权重(P)，系统总吞吐量为T，那么IO分配公式如下：
 
-![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/Eq.png)
+![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/Eq.png-name)
 
 mclock通过一种创新的tagging分配策略来达成上述公式。
 上述公式存在的问题是，Tp可能小于0，也就是说系统总吞吐量要低于所有VM的总预留值。当出现这种情况时，mclock按**预留比例**来分配IO资源。这在某些情况下可能无法满足用户需求，例如有些VM没有分配预留值或者预留值为0，那么该VM可能永远无法分配到IO。不过这可以通过为每个VM都设置预留来解决。此外，针对这种情况也可考虑通过为预留设置优先级来解决（本文不再涉及）。
@@ -87,11 +87,11 @@ mClock由三大组件组成：Tag赋值、Tag微调、请求调度。
 
 ## Tag赋值 Tag Assigment
 
-![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/Symbols.png)
+![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/Symbols.png-name)
 
 目的是为每个请求设置预留(R)、上限(L)和权重(P)三个Tag值。3个Tag的计算公式都相同，此处以预留为例。
 
-![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/Eq_3.png)
+![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/Eq_3.png-name)
 
 
 假设对给定VM1，设置其预留的IOPS为10。也就说，平均每隔1/10秒处理一个请求。将VM1的请求对应到R Tag时间轴上，相邻两个请求的时间间隔为1/10。假设Server从T1时刻开始接收来自VM1的请求，在T2时刻开始处理请求。T2时刻只要完成R Tag时间轴中Tag位于T2时刻之前的请求，就能够满足预留的要求了。这是因为，R Tag时间轴的[T1, T2)区间可以排列10\*(T2-T1)个请求，完成10\*(T2-T1)个请求刚好可以满足平均IOPS为10。如果这段时间内Server接收到超过10\*(T2-T1)个请求，那么超过部分将排列到T2时刻后面，可暂不处理。如果这段时间内Server接收到的请求数目小于或等于10\*(T2-T1)，那么这些请求都将排列在T2时刻前面，被处理掉。
@@ -108,11 +108,11 @@ P Tag不同于L和R Tag，P Tag是个**相对值**(比例值)不能理解为IOPS
 
 上文提到的**空闲优势**是VM处于非活动状态带来的一个问题。除此之外，**新VM**（刚处于活动状态的VM）也会带来一些相对于**老VM**(一直处于活动状态的VM)来说不公平的调度问题。老VM运行一段时间后，尤其是一直处于繁忙状态的VM，将越来越偏离Server的当前时间。
 
-![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/adjust_01.png)
+![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/adjust_01.png-name)
 
 假设，如上图所示，VM_A在T1时刻启动，其首个请求的Tag设置为T1。VM_B在T2时刻启动，此时VM_A剩余请求中P Tag最小的请求的Tag为T3。如此，新启动的VM_B将获得相对于VM_A有(T3-T2)的**后起优势**。
 
-![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/adjust_02.png)
+![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/adjust_02.png-name)
 
 消除新VM带来的后起优势的问题也很简单。将老VM的剩余请求中最早的请求的P Tag调整到当前时间（新VM的启动时间），同时保证老VM的剩余请求的相对位置不变。简而言之，将VM_A的所有剩余请求的P Tag都减少(T3-T1)，如此调整后新VM和老VM将处于相同的起跑线。此例中只有两个VM，一个老VM，如果有多个老VM时，调整时还要保证老VM间的相对位置不变。因此，P Tag的差值应该是**所有老VM**中最小请求的P Tag和当前时间的差值。
 
@@ -120,7 +120,7 @@ P Tag不同于L和R Tag，P Tag是个**相对值**(比例值)不能理解为IOPS
 
 mClock的请求调度分两个阶段，这两个阶段交替执行。第一个阶段称为**Constraint-based**阶段，目的是保证每个VM的预留。根据上文的解释，只要在R Tag时间轴上将所有低于当前时间的请求全部发送即可。第二个阶段称为**Weight-based**阶段，顾名思义，就是依据P Tag按比例处理不同VM的请求个数。同时，这个阶段还考虑VM的上限，对L Tag高于当前时间的请求不予处理。
 
-![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/alg.png)
+![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/alg.png-name)
 
 Weight-based阶段的请求调度会影响到下一轮的Constraint-based阶段的请求调度。假设T1时刻开始第一轮请求调度，T2时刻开始第二轮请求调度，T1时刻VM1请求的P Tag已经排到T2后面了。如果第1轮请求调度的Weight-based阶段将VM1中R Tag位于[T1, T2)时间段的请求全部处理掉，那么第2轮请求调度的Constraint-based阶段VM1将无请求可调度，也就是说，在T1~T2时间段内VM1的平均IOPS为0。这不符合用户的预留要求。
 
@@ -154,10 +154,10 @@ IO请求具有一定的空间局部性，为提高整体的处理性能，mClock
 
 不同于单主机的情况，给定VM的请求全部经由该主机进行处理，多主机的情况中给定VM的请求将分散给不同的主机进行处理。因此，在Tag赋值阶段，处理请求的主机并不知道VM的前一个请求的Tag值，只知道本主机处理的来自该VM的前个请求的Tag值。为解决这个问题，VM向目标主机发送请求时需要携带相关信息。目标主机根据这些信息来分配Tag的大小。
 
-![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/Eq_5.png)
+![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/Eq_5.png-name)
 
 对给定的VM，delta代表处理当前请求的存储主机从接收到前个请求到当前请求这段时间内，VM发送给其它主机的请求数目。同样地，rou代表对给定的VM，处理当前请求的目标主机从接收到前个请求到当前请求这段时间内，VM发送给其它主机并且在constraint-based阶段被处理的请求的个数。
 
-![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/dmclock_01.png)
+![](http://ohn764ue3.bkt.clouddn.com/DmClock/paper/dmclock_01.png-name)
 
 举个例子，如上图所示，对Server3而言，只在T1、T2两个时间点接收到请求。在T2时刻时，delta值为Server1和Server2在T1、T2时间段中接收的请求数目，为8。rou为在T1、T2时间段内Server1和Server2中在constraint-based阶段处理掉的请求个数，为3。
