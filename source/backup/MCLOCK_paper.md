@@ -7,6 +7,14 @@ tags: [mClock]
 toc: true
 ---
 
+**术语**
+
+| 英文 | 中文 |
+|:--|:--|
+| share/weight | 权重 |
+| reservation | 预留或下限 | 
+| limit | 上限 |
+
 
 存储IO调度和CPU、内存调度相比存在以下几个不同点：
 
