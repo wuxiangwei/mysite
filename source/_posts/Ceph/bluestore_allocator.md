@@ -1,5 +1,13 @@
+title: "Ceph BlueStore 解析：Object IO到磁盘的映射"
+date: 2017-02-06 20:23:29
+categories: [Ceph]
+tags: [Ceph]
+---
 
-# Ceph BlueStore解析：Object IO到磁盘的映射
+作者：[吴香伟](www.wuxiangwei.cn) 发表于 2017/02/19 
+版权声明：可以任意转载，转载时务必以超链接形式标明文章原始出处和作者信息以及版权声明
+
+----------------------
 
 简单回顾下Ceph OSD后端存储引擎的历史。
 
@@ -14,7 +22,8 @@
 
 ### 概念
 
-![](onode2disk.png)
+
+![](http://ohn764ue3.bkt.clouddn.com/ceph/bluestore/allocator/onode2disk.png-name)
 
 **Onode**    代表一个Object，类似于VFS中的Inode索引节点；
 **lextent**  Object的逻辑范围；
@@ -24,7 +33,8 @@
 
 ### 磁盘空间分配
 
-![](bitallocator.png)
+
+![](http://ohn764ue3.bkt.clouddn.com/ceph/bluestore/allocator/bitallocator.png-name)
 
 概念。
 Block 大小为4K字节的一段磁盘空间；
@@ -45,7 +55,7 @@ bluestore_min_alloc_size是Onode申请磁盘空间的最小单元，固态硬盘
 
 如何确定是否要为一个写IO分配磁盘空间，分配多少磁盘空间？
 
-![](write_io.png)
+![](http://ohn764ue3.bkt.clouddn.com/ceph/bluestore/allocator/write_io.png-name)
 
 Onode对磁盘空间的分配是“精简配置”模式，对一个只在1024K到1088K位置有数据的Object，只要为其分配64K字节而不是1088K字节的磁盘空间。上图给出了写IO修改范围和Object旧数据间的重叠关系，假设IO修改范围和旧范围都足够大，那么每个旧范围可能都有自己独立的磁盘空间。通过把IO修改范围对齐到bluestore_min_alloc_size，将IO修改范围分割成3部分：头部、中间部分和尾部。对中间部分，直接丢弃重叠的旧范围所分配的磁盘空间，为中间部分重新分配物理上连续的磁盘空间；对头部和尾部，考虑将IO修改范围应用到已分配的磁盘空间。
 
@@ -56,5 +66,5 @@ Onode对磁盘空间的分配是“精简配置”模式，对一个只在1024K�
 向bdev_block_size对齐。
 bdev_block_size是磁盘能分配的最小单元，默认4K字节。传统机械硬盘的最小读写单元是扇区，扇区大小为512字节，如果写入的数据小于512字节，则需要先读取扇区内容合并后再写入。SSD最小读写单元是页，页大小为4K字节。读取，合并，再写入，将严重降低写性能，不可不考虑。解决方法很直接，对没对齐的修改数据，**补零**，将其对齐到bdev_block_size大小。
 
-![](pad_zeros.png)
+![](http://ohn764ue3.bkt.clouddn.com/ceph/bluestore/allocator/pad_zeros.png-name)
 中间部分已经按照bdev_block_size对齐，原因是，中间部分按照bluestore_min_alloc_size对齐，而bluestore_min_alloc_size已经按照bdev_block_size对齐，故而中间部分默认已经bdev_block_size对齐。对首、尾部分又可以再分为两种情况：一种情况是对齐后，补零部分和Object的旧数据没有重叠，如上图(b)和(c)所示；另一种情况是对齐后，补零部分和Object的旧数据重叠，如上图(a)所示，这种情况不能直接补零，否则将覆盖旧数据。针对覆盖旧数据的问题，先从磁盘读取数据本应该补零的数据，用这部分数据填充新数据以达到对齐的目的。
